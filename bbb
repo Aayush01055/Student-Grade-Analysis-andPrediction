@@ -1,0 +1,162 @@
+# model_training.py
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score
+from sklearn.preprocessing import StandardScaler
+import joblib
+import matplotlib.pyplot as plt
+import seaborn as sns
+from pathlib import Path
+import os
+
+DATA_PATH = Path('data/processed_data.csv')
+MODEL_PATH = Path('models/student_performance_model.pkl')
+SCALER_PATH = Path('models/scaler.pkl')
+RESULTS_DIR = Path('model_results')
+os.makedirs(RESEULTS_DIR, exist_ok=True)
+
+def load_data():
+    """Load processed data with validation"""
+    df = pd.read_csv(DATA_PATH)
+    print("Data loaded. Shape:", df.shape)
+    
+    # Verify required columns exist
+    required_cols = ['CCA-1', 'CCA-2', 'CCA-3', 'LCA-1', 'LCA-2', 'LCA-3', 'CO_Score', 'At_Risk']
+    missing_cols = [col for col in required_cols if col not in df.columns]
+    
+    if missing_cols:
+        raise ValueError(f"Missing required columns: {missing_cols}")
+    
+    return df
+
+def prepare_features(df):
+    """Prepare features and target with scaling"""
+    features = ['CCA-1', 'CCA-2', 'CCA-3', 'LCA-1', 'LCA-2', 'LCA-3', 'CO_Score']
+    X = df[features]
+    y = df['At_Risk']
+    
+    # Scale features
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X)
+    
+    # Save scaler for inference
+    joblib.dump(scaler, SCALER_PATH)
+    
+    return X_scaled, y
+
+def train_model(X_train, y_train):
+    """Train Random Forest classifier with optimal parameters"""
+    model = RandomForestClassifier(
+        n_estimators=200,
+        max_depth=10,
+        min_samples_split=5,
+        min_samples_leaf=2,
+        random_state=42,
+        class_weight='balanced'  # Handles class imbalance
+    )
+    
+    model.fit(X_train, y_train)
+    return model
+
+def evaluate_model(model, X_test, y_test):
+    """Generate comprehensive evaluation metrics"""
+    y_pred = model.predict(X_test)
+    y_proba = model.predict_proba(X_test)[:, 1]
+    
+    # Classification report
+    report = classification_report(y_test, y_pred, output_dict=True)
+    print("\nClassification Report:")
+    print(pd.DataFrame(report).transpose())
+    
+    # Confusion matrix
+    cm = confusion_matrix(y_test, y_pred)
+    plt.figure(figsize=(8, 6))
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', 
+                xticklabels=['Not At-Risk', 'At-Risk'],
+                yticklabels=['Not At-Risk', 'At-Risk'])
+    plt.title('Confusion Matrix')
+    plt.ylabel('Actual')
+    plt.xlabel('Predicted')
+    plt.savefig(RESULTS_DIR/'confusion_matrix.png')
+    plt.close()
+    
+    # ROC AUC
+    roc_auc = roc_auc_score(y_test, y_proba)
+    print(f"\nROC AUC Score: {roc_auc:.3f}")
+    
+    return report, roc_auc
+
+def save_results(model, report, roc_auc):
+    """Save model and results"""
+    # Save model
+    joblib.dump(model, MODEL_PATH)
+    
+    # Save metrics
+    with open(RESULTS_DIR/'model_performance.txt', 'w') as f:
+        f.write("=== Model Performance ===\n")
+        f.write(f"ROC AUC Score: {roc_auc:.3f}\n\n")
+        f.write("Classification Report:\n")
+        f.write(pd.DataFrame(report).transpose().to_string())
+    
+    print(f"\nModel and results saved to {RESULTS_DIR}")
+
+def feature_importance_analysis(model, X_train):
+    """Analyze and plot feature importance"""
+    importance = pd.DataFrame({
+        'Feature': X_train.columns,
+        'Importance': model.feature_importances_
+    }).sort_values('Importance', ascending=False)
+    
+    plt.figure(figsize=(10, 6))
+    sns.barplot(x='Importance', y='Feature', data=importance)
+    plt.title('Feature Importance')
+    plt.tight_layout()
+    plt.savefig(RESULTS_DIR/'feature_importance.png')
+    plt.close()
+    
+    return importance
+
+def main():
+    try:
+        print("Starting model training...")
+        
+        # Load and prepare data
+        df = load_data()
+        X, y = prepare_features(df)
+        
+        # Split data (stratified to maintain class balance)
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, 
+            test_size=0.2, 
+            random_state=42,
+            stratify=y
+        )
+        
+        # Train model
+        model = train_model(X_train, y_train)
+        
+        # Evaluate
+        report, roc_auc = evaluate_model(model, X_test, y_test)
+        
+        # Feature analysis
+        feature_importance = feature_importance_analysis(model, pd.DataFrame(
+            X_train, 
+            columns=['CCA-1', 'CCA-2', 'CCA-3', 'LCA-1', 'LCA-2', 'LCA-3', 'CO_Score']
+        ))
+        
+        # Save results
+        save_results(model, report, roc_auc)
+        
+        print("\nTraining complete!")
+        print("Key files generated:")
+        print(f"- Model: {MODEL_PATH}")
+        print(f"- Scaler: {SCALER_PATH}")
+        print(f"- Results directory: {RESULTS_DIR}")
+        
+    except Exception as e:
+        print(f"\nError during model training: {str(e)}")
+
+if __name__ == '__main__':
+    main()

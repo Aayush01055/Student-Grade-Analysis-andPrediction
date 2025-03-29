@@ -1,0 +1,72 @@
+Email Address		
+Name	
+Panel
+Roll Number	
+PRN	
+Attended the Components(CCA,LCA)	
+CCA-1 (10 marks)	
+CCA-2 (5 marks)	
+CCA-3  (Mid term-15 marks)	
+LCA 1 (PRACTICAL PERFORMANCE)	
+LCA-2 (Active Learning/ Project)	
+LCA-3 (End term practical/oral)	
+CO1 ( Analyze and apply different data preparation techniques for Machine Learning applications )	
+CO2 ( Identify, Analyze and compare appropriate supervised learning algorithm for given problem )	
+CO3 (Identify, Analyze and Compare Unsupervised and semi supervised algoritm)
+CO4(Design and implement Machine Learning techniques for real-time applications )	
+
+Admin:-To enter all the student details (login and info)
+also add teacher details (login)
+
+Teacher:-Add student marks
+View a list of aLL the students.On clicking on the student name will be able to view the students graph and also will be able to give feedback or suggestion for improvement.This feedback will go to the student via its registered mail.
+
+Student:-View it's respective graph(Only viewing).(Additional:-submission of any discrepancies-> will be redirected to admins mail)
+
+Table 1:-Common table:-
+Table name: -loginmaster
+
+studentdetails->
+PRN	
+Roll Number	
+Name	
+Panel
+Email Address		
+
+
+PRN | Pass | type
+789 | 123| teacher
+456 |987 |student
+
+
+login-
+dropdown:-Teacher
+            student
+    teacher -> db -> unmae,pass,type  
+
+Table 2:-Teacher table
+Table Name: -Marks_master
+PRN | Remaining Components
+
+This will be linked to the webpage
+
+
+
+Login -> if teacher->add student marks->click on student->view graph of the analysis and prediction->Give feedback or suggestion
+Login->If student->View graph
+Login->if admin->add student and teacher details
+
+
+The main graph is will have overall_score plotted.there will be a threshold .value below threshold will be categorized as dropout,value on the threshold line will be categorized  as averag and value much above the threshold will be categorized as excellent.The graph will depict the current scenario based on the marks and also it will show the prediction graph(That is the line in graph) which would show that whether the student will dropout,or be average or be excellent based on the current stats.
+This graph will be visible to students and teachers.
+
+
+
+
+--------------------------------------------------------
+Hardcore:-Static (create columns) the values avg_cca,avg_lca in the original dataset ie updated
+
+preprocess this uodated dataset and get important features(avg_cca,avg_lca,overall_score)
+train the model on the cleaned dataset(given by preprocess)
+
+Refer line 48 in preprocess

@@ -1,0 +1,20 @@
+
+=== RF Model Performance ===
+Mean Squared Error (MSE): 0.032
+Mean Absolute Error (MAE): 0.142
+R² Score: 0.978
+
+=== XGB Model Performance ===
+Mean Squared Error (MSE): 0.009
+Mean Absolute Error (MAE): 0.071
+R² Score: 0.994
+
+=== NN Model Performance ===
+Mean Squared Error (MSE): 0.001
+Mean Absolute Error (MAE): 0.029
+R² Score: 0.999
+
+=== STACKED Model Performance ===
+Mean Squared Error (MSE): 0.004
+Mean Absolute Error (MAE): 0.047
+R² Score: 0.997
