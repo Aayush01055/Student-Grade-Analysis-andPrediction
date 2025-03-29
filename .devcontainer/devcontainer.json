@@ -1,13 +1,20 @@
 {
-    "name": "my-project-devcontainer",
-    "image": "mcr.microsoft.com/devcontainers/base:ubuntu",  // Any generic, debian-based image.
-    "features": {
-        "ghcr.io/devcontainers/features/go:1": {
-            "version": "1.18"
-        },
-        "ghcr.io/devcontainers/features/docker-in-docker:1": {
-            "version": "latest",
-            "moby": true
-        }
+  "name": "MySQL Dev Container",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "features": {
+    "ghcr.io/devcontainers-contrib/features/homebrew-packages:1": {
+      "packages": "mysql"
     }
+  },
+  "containerEnv": {
+    "MYSQL_ROOT_PASSWORD": "root",
+    "MYSQL_DATABASE": "student_grade_system",
+    "MYSQL_USER": "devuser",
+    "MYSQL_PASSWORD": "devpass"
+  },
+  "forwardPorts": [3306],
+  "postCreateCommand": "mysql --version",
+  "remoteUser": "vscode"
 }
