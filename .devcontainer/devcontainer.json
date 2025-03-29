@@ -1,22 +1,19 @@
 {
   "name": "MySQL Dev Container",
-  "features": {
-    "ghcr.io/devcontainers/features/common-utils:1": {},
-    "ghcr.io/devcontainers/features/mysql:1": {
-      "version": "8.0",
-      "rootPassword": "root",
-      "database": "devdb",
-      "user": "student_grade_system",
-      "password": "devpass"
+  "services": {
+    "mysql": {
+      "image": "mysql:8.0",
+      "restart": "always",
+      "env": {
+        "MYSQL_ROOT_PASSWORD": "root",
+        "MYSQL_DATABASE": "devdb",
+        "MYSQL_USER": "devuser",
+        "MYSQL_PASSWORD": "devpass"
+      },
+      "ports": ["3306:3306"]
     }
   },
   "forwardPorts": [3306],
-  "portsAttributes": {
-    "3306": {
-      "label": "MySQL",
-      "onAutoForward": "notify"
-    }
-  },
   "remoteUser": "vscode",
   "postCreateCommand": "mysql --version"
 }
