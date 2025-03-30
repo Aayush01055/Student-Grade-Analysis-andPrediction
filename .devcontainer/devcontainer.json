@@ -1,19 +1,14 @@
 {
-  "name": "MySQL Dev Container",
-  "services": {
-    "mysql": {
-      "image": "mysql:8.0",
-      "restart": "always",
-      "env": {
-        "MYSQL_ROOT_PASSWORD": "root",
-        "MYSQL_DATABASE": "devdb",
-        "MYSQL_USER": "devuser",
-        "MYSQL_PASSWORD": "devpass"
-      },
-      "ports": ["3306:3306"]
-    }
-  },
-  "forwardPorts": [3306],
-  "remoteUser": "vscode",
-  "postCreateCommand": "mysql --version"
+  "name": "MySQL Dev Environment",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "app",
+  "workspaceFolder": "/workspace",
+  "shutdownAction": "stopCompose",
+  "extensions": [
+    "ms-vscode-remote.remote-containers",
+    "dbaeumer.vscode-eslint" // Optional: Add extensions you need
+  ],
+  "settings": {
+    "terminal.integrated.shell.linux": "/bin/bash"
+  }
 }
