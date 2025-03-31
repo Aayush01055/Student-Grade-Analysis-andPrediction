@@ -170,11 +170,13 @@ def predict():
         svm_pred = float(svm_model.predict(features)[0])
         nn_pred = float(nn_model.predict(np.array(features).reshape(1, -1))[0][0])
 
+        average_pred = (rf_pred + svm_pred + nn_pred) / 3
+
         return jsonify({
             'RandomForest': rf_pred,
             'SVM': svm_pred,
             'NeuralNetwork': nn_pred,
-            'Average': (rf_pred + svm_pred + nn_pred) / 3
+            'Average': average_pred
         })
     except Exception as e:
         logger.error(f"Prediction error: {str(e)}")

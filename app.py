@@ -93,7 +93,9 @@ def predict():
     svm_pred = svm_model.predict(features)[0]
     nn_pred = nn_model.predict(np.array(features).reshape(1, -1))[0][0]
 
-    return jsonify({'RandomForest': rf_pred, 'SVM': svm_pred, 'NeuralNetwork': nn_pred})
+    average_pred = (rf_pred + svm_pred + nn_pred) / 3
+
+    return jsonify({'RandomForest': rf_pred, 'SVM': svm_pred, 'NeuralNetwork': nn_pred, 'Average': average_pred})
 
 if __name__ == '__main__':
     app.run(debug=True)
