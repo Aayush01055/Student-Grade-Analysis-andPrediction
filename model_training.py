@@ -1,10 +1,11 @@
-from flask import Flask, request, jsonify
-from flask_mysqldb import MySQL
-import pickle
+import pandas as pd
 import numpy as np
-import tensorflow as tf
-from werkzeug.security import generate_password_hash, check_password_hash
-from functools import wraps
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.svm import SVR
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+import pickle
 import logging
 from pathlib import Path
 
@@ -12,188 +13,98 @@ from pathlib import Path
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-app = Flask(__name__)
-
-# MySQL Configuration
-app.config['MYSQL_HOST'] = 'localhost'
-app.config['MYSQL_USER'] = 'root'
-app.config['MYSQL_PASSWORD'] = 'password'
-app.config['MYSQL_DB'] = 'student_db'
-
-mysql = MySQL(app)
-
-# Model directory
+# Paths
+DATA_PATH = Path('/workspaces/ML-Project/cleaned_student_data.csv')
 MODEL_DIR = Path('./models')
+MODEL_DIR.mkdir(parents=True, exist_ok=True)
 
-# Load trained models
-try:
-    with open(MODEL_DIR / 'rf_model.pkl', 'rb') as f:
-        rf_model = pickle.load(f)
-
-    with open(MODEL_DIR / 'svm_model.pkl', 'rb') as f:
-        svm_model = pickle.load(f)
-
-    with open(MODEL_DIR / 'scaler.pkl', 'rb') as f:
-        scaler = pickle.load(f)
-
-    nn_model = tf.keras.models.load_model(MODEL_DIR / 'nn_model.h5')
-    logger.info("All models loaded successfully")
-except Exception as e:
-    logger.error(f"Error loading models: {str(e)}")
-    raise
-
-# Expected features for prediction
-EXPECTED_FEATURES = [
-    'cca_1_10_marks', 'cca_2_5_marks', 'cca_3_mid_term_15_marks',
-    'lca_1_practical_performance', 'lca_2_active_learning_project',
-    'lca_3_end_term_practical_oral', 'avg_cca', 'avg_lca'
-]
-
-def validate_input(data, required_fields):
-    """Validate input data contains all required fields"""
-    missing_fields = [field for field in required_fields if field not in data]
-    if missing_fields:
-        raise ValueError(f"Missing required fields: {missing_fields}")
-    return True
-
-def prepare_features(data):
-    """Prepare and scale features for model prediction"""
-    try:
-        features = [data[f] for f in EXPECTED_FEATURES]
-        return scaler.transform([features])
-    except Exception as e:
-        logger.error(f"Error preparing features: {str(e)}")
-        raise ValueError("Invalid feature data provided")
-
-def db_operation(func):
-    """Decorator for database operations with error handling"""
-    @wraps(func)
-    def wrapper(*args, **kwargs):
-        try:
-            return func(*args, **kwargs)
-        except Exception as e:
-            mysql.connection.rollback()
-            logger.error(f"Database operation failed: {str(e)}")
-            return jsonify({'error': 'Database operation failed'}), 500
-    return wrapper
-
-@app.route('/api/login', methods=['POST'])
-def login():
-    try:
-        data = request.json
-        validate_input(data, ['prn', 'password'])
-        
-        prn = data['prn']
-        password = data['password']
-
-        cur = mysql.connection.cursor()
-        cur.execute("SELECT password FROM loginmaster WHERE prn=%s", (prn,))
-        user = cur.fetchone()
-        cur.close()
-
-        if user and check_password_hash(user[0], password):
-            return jsonify({'message': 'Login successful'})
-        return jsonify({'message': 'Invalid credentials'}), 401
-    except Exception as e:
-        logger.error(f"Login error: {str(e)}")
-        return jsonify({'error': str(e)}), 400
-
-@app.route('/api/add-user', methods=['POST'])
-@db_operation
-def add_user():
-    data = request.json
-    validate_input(data, ['prn', 'password'])
+# Load Data
+def load_data():
+    df = pd.read_csv(DATA_PATH)
+    df.dropna(inplace=True)
     
-    prn = data['prn']
-    password = generate_password_hash(data['password'])
-
-    cur = mysql.connection.cursor()
-    # Check if user already exists
-    cur.execute("SELECT prn FROM loginmaster WHERE prn=%s", (prn,))
-    if cur.fetchone():
-        cur.close()
-        return jsonify({'error': 'User already exists'}), 400
+    # Standardize column names: lowercase, replace spaces/hyphens, clean underscores
+    df.columns = (
+        df.columns.str.lower()
+        .str.replace(r'[\s\-()\/]', '_', regex=True)  # Replace spaces, hyphens, slashes
+        .str.replace('__', '_', regex=True)  # Remove double underscores
+        .str.strip('_')  # Remove trailing underscores
+    )
     
-    cur.execute("INSERT INTO loginmaster (prn, password) VALUES (%s, %s)", (prn, password))
-    mysql.connection.commit()
-    cur.close()
+    logger.info(f"Dataset columns: {list(df.columns)}")
+    return df
 
-    return jsonify({'message': 'User registered successfully'}), 201
+# Feature Engineering
+def prepare_features(df):
+    expected_features = [
+        'cca_1_10_marks', 'cca_2_5_marks', 'cca_3_mid_term_15_marks',
+        'lca_1_practical_performance', 'lca_2_active_learning_project',
+        'lca_3_end_term_practical_oral', 'avg_cca', 'avg_lca'
+    ]
+    
+    # Identify actual features in dataset after cleaning column names
+    actual_features = [col for col in df.columns if any(feat in col for feat in expected_features)]
+    
+    if not actual_features:
+        logger.error("No expected features found in dataset!")
+        raise KeyError(f"Feature columns are missing from the dataset. Available columns: {df.columns}")
+    
+    logger.info(f"Using features: {actual_features}")
 
-@app.route('/api/students', methods=['GET'])
-@db_operation
-def get_students():
-    cur = mysql.connection.cursor()
-    cur.execute("SELECT * FROM studentdetails")
-    columns = [col[0] for col in cur.description]  # Get column names
-    students = cur.fetchall()
-    cur.close()
+    # Extract target variable
+    if 'overall_score' not in df.columns:
+        logger.error("Target column 'overall_score' is missing!")
+        raise KeyError("Target column 'overall_score' is missing.")
+    
+    X = df[actual_features]
+    y = df['overall_score']
+    
+    # Normalize data
+    scaler = MinMaxScaler()
+    X_scaled = scaler.fit_transform(X)
+    y_scaled = MinMaxScaler().fit_transform(y.values.reshape(-1, 1)).flatten()
+    
+    with open(MODEL_DIR / 'scaler.pkl', 'wb') as f:
+        pickle.dump(scaler, f)
+    
+    return X_scaled, y_scaled
 
-    # Convert to list of dictionaries for better JSON representation
-    students_list = [dict(zip(columns, student)) for student in students]
-    return jsonify(students_list)
+# Train SVM and RF
+def train_models(X_train, y_train):
+    svm_model = SVR(kernel='rbf', C=10, epsilon=0.1)
+    rf_model = RandomForestRegressor(n_estimators=200, max_depth=10, random_state=42)
+    
+    svm_model.fit(X_train, y_train)
+    rf_model.fit(X_train, y_train)
+    
+    return svm_model, rf_model
 
-@app.route('/api/add-marks', methods=['POST'])
-@db_operation
-def add_marks():
-    data = request.json
-    required_fields = ['prn', 'maths', 'science', 'english', 'history', 'geography']
-    validate_input(data, required_fields)
+# Evaluate Model
+def evaluate_model(model, X_test, y_test, model_name):
+    y_pred = model.predict(X_test)
+    mse = mean_squared_error(y_test, y_pred)
+    mae = mean_absolute_error(y_test, y_pred)
+    r2 = r2_score(y_test, y_pred)
+    
+    logger.info(f"{model_name} - MSE: {mse:.4f}, MAE: {mae:.4f}, R2 Score: {r2:.4f}")
 
-    cur = mysql.connection.cursor()
-    cur.execute("""
-        INSERT INTO marks_master 
-        (prn, maths, science, english, history, geography) 
-        VALUES (%s, %s, %s, %s, %s, %s)
-        ON DUPLICATE KEY UPDATE
-        maths=%s, science=%s, english=%s, history=%s, geography=%s
-    """, (
-        data['prn'], data['maths'], data['science'], data['english'], 
-        data['history'], data['geography'],
-        data['maths'], data['science'], data['english'], 
-        data['history'], data['geography']
-    ))
-    mysql.connection.commit()
-    cur.close()
-
-    return jsonify({'message': 'Marks added/updated successfully'})
-
-@app.route('/api/predict', methods=['POST'])
-def predict():
-    try:
-        data = request.json
-        validate_input(data, EXPECTED_FEATURES)
-        features = prepare_features(data)
-
-        # Make predictions
-        rf_pred = float(rf_model.predict(features)[0])
-        svm_pred = float(svm_model.predict(features)[0])
-        nn_pred = float(nn_model.predict(np.array(features).reshape(1, -1))[0][0])
-
-        average_pred = (rf_pred + svm_pred + nn_pred) / 3
-
-        return jsonify({
-            'RandomForest': rf_pred,
-            'SVM': svm_pred,
-            'NeuralNetwork': nn_pred,
-            'Average': average_pred
-        })
-    except Exception as e:
-        logger.error(f"Prediction error: {str(e)}")
-        return jsonify({'error': str(e)}), 400
-
-@app.route('/api/health', methods=['GET'])
-def health_check():
-    """Health check endpoint"""
-    return jsonify({
-        'status': 'healthy',
-        'models_loaded': all([
-            'rf_model' in globals(),
-            'svm_model' in globals(),
-            'scaler' in globals(),
-            'nn_model' in globals()
-        ])
-    })
+# Main
+def main():
+    df = load_data()
+    X, y = prepare_features(df)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    
+    svm_model, rf_model = train_models(X_train, y_train)
+    
+    with open(MODEL_DIR / 'svm_model.pkl', 'wb') as f:
+        pickle.dump(svm_model, f)
+    with open(MODEL_DIR / 'rf_model.pkl', 'wb') as f:
+        pickle.dump(rf_model, f)
+    
+    evaluate_model(svm_model, X_test, y_test, "SVM")
+    evaluate_model(rf_model, X_test, y_test, "Random Forest")
+    
+    logger.info("Model training and evaluation complete!")
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    main()
