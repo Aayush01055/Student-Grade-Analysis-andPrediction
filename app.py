@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 import mysql.connector
 import pickle
@@ -6,9 +6,14 @@ import smtplib
 from email.mime.text import MIMEText
 import numpy as np
 import pandas as pd
-import tensorflow as tf
 import os
 import logging
+from scipy import stats
+from flask_mail import Mail, Message
+import secrets
+import string
+from fpdf import FPDF
+import io
 
 app = Flask(__name__)
 CORS(app)
@@ -22,24 +27,17 @@ db_config = {
     'host': 'localhost',
     'user': 'root',
     'password': 'rootpassword',
-    'database': 'student_grade_system',
-    'auth_plugin':'mysql_native_password'  # Explicitly specify authentication plugin
+    'database': 'student_grade_system'
 }
 
 # Model file paths
 MODEL_DIR = '/workspace/models'
-# SCALER_PATH = os.path.join(MODEL_DIR, 'scaler.pkl')
-# TARGET_SCALER_PATH = os.path.join(MODEL_DIR, 'target_scaler.pkl')
-# RF_MODEL_PATH = os.path.join(MODEL_DIR, 'rf_student_performance_model.pkl')
-# XGB_MODEL_PATH = os.path.join(MODEL_DIR, 'xgb_student_performance_model.pkl')
-# NN_MODEL_PATH = os.path.join(MODEL_DIR, 'nn_student_performance_model.h5')
-# META_MODEL_PATH = os.path.join(MODEL_DIR, 'meta_model.pkl')
-SVM_MODEL_PATH = os.path.join(MODEL_DIR, 'svm_model.pkl')
-RF_REGRESSOR_PATH = os.path.join(MODEL_DIR, 'rf_student_performance_model.pkl')
+SCALER_PATH = os.path.join(MODEL_DIR, 'scaler.pkl')
+TARGET_SCALER_PATH = os.path.join(MODEL_DIR, 'target_scaler.pkl')
+RF_MODEL_PATH = os.path.join(MODEL_DIR, 'rf_student_performance_model.pkl')
+XGB_MODEL_PATH = os.path.join(MODEL_DIR, 'xgb_student_performance_model.pkl')
+META_MODEL_PATH = os.path.join(MODEL_DIR, 'meta_model.pkl')
 
-# Load models
-svm_model = None
-rf_regressor = None
 # Database initialization
 def init_db():
     try:
@@ -85,6 +83,17 @@ def init_db():
             FOREIGN KEY (prn) REFERENCES studentdetails(prn)
         )''')
         
+        # Add new table for prediction history to track fluctuations
+        cursor.execute('''CREATE TABLE IF NOT EXISTS prediction_history (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            prn VARCHAR(50),
+            prediction_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            predicted_score FLOAT,
+            prediction_lower_bound FLOAT,
+            prediction_upper_bound FLOAT,
+            FOREIGN KEY (prn) REFERENCES studentdetails(prn)
+        )''')
+        
         conn.commit()
         cursor.close()
         conn.close()
@@ -100,23 +109,35 @@ scaler = None
 target_scaler = None
 rf_model = None
 xgb_model = None
-nn_model = None
 meta_model = None
-def load_pickle_model(file_path, model_name):
+
+def load_model(file_path, loader_func, model_name):
     if not os.path.exists(file_path):
         logger.error(f"{model_name} file not found at {file_path}")
         return None
     try:
-        with open(file_path, 'rb') as file:
-            model = pickle.load(file)
+        model = loader_func(file_path)
         logger.info(f"{model_name} loaded successfully from {file_path}")
         return model
     except Exception as e:
         logger.error(f"Error loading {model_name} from {file_path}: {e}")
         return None
 
-svm_model = load_pickle_model(SVM_MODEL_PATH, "SVM Model")
-rf_regressor = load_pickle_model(RF_REGRESSOR_PATH, "Random Forest Regressor")
+try:
+    scaler = load_model(SCALER_PATH, lambda x: pickle.load(open(x, 'rb')), "Scaler")
+    target_scaler = load_model(TARGET_SCALER_PATH, lambda x: pickle.load(open(x, 'rb')), "Target Scaler")
+    rf_model = load_model(RF_MODEL_PATH, lambda x: pickle.load(open(x, 'rb')), "Random Forest Model")
+    xgb_model = load_model(XGB_MODEL_PATH, lambda x: pickle.load(open(x, 'rb')), "XGBoost Model")
+    meta_model = load_model(META_MODEL_PATH, lambda x: pickle.load(open(x, 'rb')), "Meta Model")
+    
+    if all([scaler, target_scaler, rf_model, xgb_model, meta_model]):
+        logger.info("All ML models and scalers loaded successfully.")
+    else:
+        logger.warning("One or more models/scalers failed to load. Prediction will be skipped.")
+
+except Exception as e:
+    logger.error(f"Unexpected error during model loading: {e}")
+
 @app.route('/api/login', methods=['POST'])
 def login():
     data = request.get_json()
@@ -218,67 +239,146 @@ def add_marks():
         logger.error(f"Error adding marks: {err}")
         return jsonify({'success': False, 'error': 'Database error'}), 500
 
+def generate_prediction_with_uncertainty(base_prediction, confidence_level=0.90):
+    """
+    Generate a prediction with confidence intervals to reflect uncertainty
+    """
+    # Standard deviation is proportional to distance from extremes (more uncertain in the middle)
+    # This creates more realistic fluctuations based on the prediction value
+    if base_prediction <= 50:
+        std_dev = base_prediction * 0.15  # Higher uncertainty for lower performers
+    else:
+        std_dev = (100 - base_prediction) * 0.12  # Lower uncertainty for high performers
+    
+    # Create a truncated normal distribution between 0-100
+    a, b = (0 - base_prediction) / std_dev, (100 - base_prediction) / std_dev
+    lower_bound = max(0, base_prediction - stats.truncnorm.ppf(1 - (1 - confidence_level)/2, a, b) * std_dev)
+    upper_bound = min(100, base_prediction + stats.truncnorm.ppf(1 - (1 - confidence_level)/2, a, b) * std_dev)
+    
+    # Add small random fluctuation to make predictions more dynamic
+    fluctuation = np.random.normal(0, std_dev * 0.2)
+    adjusted_prediction = min(100, max(0, base_prediction + fluctuation))
+    
+    return adjusted_prediction, lower_bound, upper_bound
+
 @app.route('/api/student-graph/<prn>', methods=['GET'])
 def student_graph(prn):
+    logger.info(f"Processing student graph for PRN: {prn}")
     try:
         conn = mysql.connector.connect(**db_config)
         cursor = conn.cursor()
-        cursor.execute('''SELECT cca1, cca2, cca3, lca1, lca2, lca3, co1, co2, co3, co4 
-                          FROM marks_master WHERE prn = %s''', (prn,))
+        cursor.execute('SELECT cca1, cca2, cca3, lca1, lca2, lca3, co1, co2, co3, co4 '
+                       'FROM marks_master WHERE prn = %s', (prn,))
         marks = cursor.fetchone()
+        
+        cursor.execute('SELECT predicted_score, prediction_lower_bound, prediction_upper_bound, '
+                       'prediction_date FROM prediction_history WHERE prn = %s '
+                       'ORDER BY prediction_date DESC LIMIT 1', (prn,))
+        prev_prediction = cursor.fetchone()
+        
         cursor.close()
         conn.close()
 
-        if not marks:
-            logger.error(f"No marks found for PRN {prn}")
-            return jsonify({'overallScore': 0, 'predictedScore': 0, 'threshold': 50})
+        if not marks or all(m == 0 or m is None for m in marks):
+            logger.warning(f"No valid marks found for PRN: {prn}, returning default values")
+            return jsonify({
+                'success': True,
+                'status': 'No Data',
+                'overallScore': 0.0,
+                'predictedScore': 0.0,
+                'lowerBound': 0.0,
+                'upperBound': 0.0,
+                'threshold': 50
+            })
 
-        # Convert marks to float and handle NULL values
         marks = [float(m) if m is not None else 0.0 for m in marks]
-        logger.debug(f"Fetched marks for PRN {prn}: {marks}")
+        overall_score = sum(marks[:6])
+        logger.debug(f"Raw overall score for PRN {prn}: {overall_score}")
 
-        # Scale the marks using the loaded scaler
-        if scaler:
-            marks_scaled = scaler.transform([marks])
-        else:
-            logger.error("Scaler not loaded")
-            marks_scaled = [marks]
+        avg_cca = sum(marks[:3]) / 3
+        avg_lca = sum(marks[3:6]) / 3
+        feature_names = ['cca_1_10_marks', 'cca_2_5_marks', 'cca_3_mid_term_15_marks',
+                         'lca_1_practical_performance', 'lca_2_active_learning_project',
+                         'lca_3_end_term_practical_oral', 'avg_cca', 'avg_lca']
+        marks_with_derived = list(marks[:6]) + [avg_cca, avg_lca]
 
-        # Calculate overall score
-        overall_score = sum(marks)
-        overall_score_scaled = min((overall_score / 100) * 100, 100)  # Assuming 100 is the max score
+        max_possible_score = 50
+        overall_score_scaled = min((overall_score / max_possible_score) * 100, 100)
 
-        # Predict using the models
-        if svm_model and rf_regressor:
+        if scaler and target_scaler and rf_model and xgb_model and meta_model:
             try:
-                marks_df = pd.DataFrame(marks_scaled, columns=['cca1', 'cca2', 'cca3', 'lca1', 'lca2', 'lca3', 'co1', 'co2', 'co3', 'co4'])
-                logger.debug(f"Scaled Marks DataFrame: {marks_df}")
-
-                svm_pred = svm_model.predict(marks_df)[0]
-                rf_reg_pred = rf_regressor.predict(marks_df)[0]
-                predicted_score = (svm_pred + rf_reg_pred) / 2
-                predicted_score = min(predicted_score, 100)
-
-                logger.debug(f"SVM Prediction: {svm_pred}, RF Prediction: {rf_reg_pred}")
+                marks_df = pd.DataFrame([marks_with_derived], columns=feature_names)
+                scaled_marks = scaler.transform(marks_df)
+                
+                rf_pred = rf_model.predict(scaled_marks)[0]
+                xgb_pred = xgb_model.predict(scaled_marks)[0]
+                
+                stacked_features = np.array([[rf_pred, xgb_pred, overall_score_scaled]])
+                logger.debug(f"Meta model input shape: {stacked_features.shape}")
+                
+                stacked_pred = meta_model.predict(stacked_features)[0]
+                base_prediction = float(target_scaler.inverse_transform([[stacked_pred]])[0][0])
+                
+                if prev_prediction:
+                    prev_score = float(prev_prediction[0])
+                    consistency_factor = 0.7
+                    base_prediction = (consistency_factor * base_prediction) + ((1 - consistency_factor) * prev_score)
+                
+                adjustment_factor = 0.7
+                base_prediction = (adjustment_factor * base_prediction) + ((1 - adjustment_factor) * overall_score_scaled)
+                base_prediction = min(base_prediction, 100)
+                
             except Exception as e:
-                logger.error(f"Model prediction error: {e}")
-                predicted_score = overall_score_scaled
+                logger.error(f"Error during model prediction: {e}")
+                base_prediction = overall_score_scaled
+            
+            predicted_score, lower_bound, upper_bound = generate_prediction_with_uncertainty(base_prediction)
+            logger.info(f"Predicted Score for PRN {prn}: {predicted_score} [{lower_bound}-{upper_bound}]")
+            
+            conn = mysql.connector.connect(**db_config)
+            cursor = conn.cursor()
+            cursor.execute('INSERT INTO prediction_history (prn, predicted_score, prediction_lower_bound, prediction_upper_bound) '
+                           'VALUES (%s, %s, %s, %s)', (prn, predicted_score, lower_bound, upper_bound))
+            conn.commit()
+            cursor.close()
+            conn.close()
         else:
-            logger.error("Models not loaded")
             predicted_score = overall_score_scaled
+            lower_bound = max(0, predicted_score - 10)
+            upper_bound = min(100, predicted_score + 10)
+            logger.warning(f"Prediction skipped for PRN {prn} due to model loading error.")
+
+        # Determine performance status
+        if predicted_score >= 80:
+            status = "Excellent"
+        elif predicted_score >= 60:
+            status = "Good"
+        elif predicted_score >= 50:
+            status = "Average"
+        else:
+            status = "Needs Improvement"
 
         return jsonify({
+            'success': True,
+            'status': status,
             'overallScore': float(overall_score_scaled),
             'predictedScore': float(predicted_score),
+            'lowerBound': float(lower_bound),
+            'upperBound': float(upper_bound),
             'threshold': 50
         })
-    
-    except mysql.connector.Error as err:
-        logger.error(f"Database error: {err}")
-        return jsonify({'success': False, 'error': 'Database error'}), 500
     except Exception as e:
-        logger.error(f"Unexpected error in student_graph: {e}")
-        return jsonify({'success': False, 'error': 'Prediction error'}), 500
+        logger.error(f"Error in student graph prediction for PRN {prn}: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'status': 'Error',
+            'overallScore': float(overall_score_scaled if 'overall_score_scaled' in locals() else 0),
+            'predictedScore': 0.0,
+            'lowerBound': 0.0,
+            'upperBound': 0.0,
+            'threshold': 50
+        }), 500
 
 @app.route('/api/send-feedback', methods=['POST'])
 def send_feedback():
@@ -340,6 +440,174 @@ def submit_discrepancy():
     except Exception as e:
         logger.error(f"Error submitting discrepancy: {e}")
         return jsonify({'success': False, 'error': 'Email sending failed'}), 500
+
+# Configure Flask-Mail (add to your existing Flask config)
+app.config['MAIL_SERVER'] = 'smtp.gmail.com'
+app.config['MAIL_PORT'] = 587
+app.config['MAIL_USE_TLS'] = True
+app.config['MAIL_USERNAME'] = 'aayush.shah@mitwpu.edu.in'
+app.config['MAIL_PASSWORD'] = 'flsu hpwx lrjk nnwd'
+mail = Mail(app)
+
+# Add this route to your existing Flask app
+@app.route('/api/forgot-password', methods=['POST'])
+def forgot_password():
+    data = request.get_json()
+    email = data['email']
+    user_type = data.get('userType', 'student')
+    
+    conn = None
+    cursor = None
+    
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor(dictionary=True)
+        
+        # Check if email exists based on user type
+        if user_type == 'student':
+            query = 'SELECT prn, email FROM studentdetails WHERE email = %s'
+            cursor.execute(query, (email,))
+        else:
+            query = '''
+                SELECT l.prn, s.email 
+                FROM loginmaster l
+                JOIN studentdetails s ON l.prn = s.prn
+                WHERE s.email = %s AND l.user_type = %s
+            '''
+            cursor.execute(query, (email, user_type))
+        
+        user = cursor.fetchone()
+        
+        # Ensure we consume all results
+        while cursor.nextset():
+            pass
+        
+        if not user:
+            return jsonify({'success': False, 'message': 'Email not found for this user type'}), 404
+        
+        # Generate reset token
+        reset_token = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(32))
+        
+        # Store token in database
+        update_query = '''
+            UPDATE loginmaster 
+            SET reset_token = %s, token_expiry = DATE_ADD(NOW(), INTERVAL 1 HOUR)
+            WHERE prn = %s
+        '''
+        cursor.execute(update_query, (reset_token, user['prn']))
+        conn.commit()
+        
+        # Send email
+        reset_link = f"http://localhost:3000/reset-password?token={reset_token}"
+        msg = Message('Password Reset Request',
+                     sender='noreply@yourdomain.com',
+                     recipients=[email])
+        msg.body = f'''
+            To reset your password, click the following link:
+            {reset_link}
+            
+            This link will expire in 1 hour.
+            
+            If you didn't request this, please ignore this email.
+        '''
+        mail.send(msg)
+        
+        return jsonify({'success': True})
+        
+    except Exception as e:
+        logger.error(f"Password reset error: {e}")
+        return jsonify({'success': False, 'message': 'Server error'}), 500
+    finally:
+        if cursor:
+            try:
+                # Ensure all results are consumed
+                while cursor.nextset():
+                    pass
+                cursor.close()
+            except:
+                pass
+        if conn and conn.is_connected():
+            conn.close()
+
+@app.route('/api/generate-student-report/<prn>', methods=['GET'])
+def generate_student_report(prn):
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor(dictionary=True)
+        
+        # Get student details
+        cursor.execute('''
+            SELECT s.prn, s.name, s.email, s.panel, m.* 
+            FROM studentdetails s
+            LEFT JOIN marks_master m ON s.prn = m.prn
+            WHERE s.prn = %s
+        ''', (prn,))
+        student = cursor.fetchone()
+        
+        if not student:
+            return jsonify({'success': False, 'message': 'Student not found'}), 404
+        
+        # Create PDF
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_font('Arial', 'B', 16)
+        
+        # Title
+        pdf.cell(0, 10, f'Student Performance Report: {student["name"]}', 0, 1, 'C')
+        pdf.ln(10)
+        
+        # Student Info
+        pdf.set_font('Arial', '', 12)
+        pdf.cell(0, 10, f'PRN: {student["prn"]}', 0, 1)
+        pdf.cell(0, 10, f'Email: {student["email"]}', 0, 1)
+        pdf.cell(0, 10, f'Panel: {student["panel"]}', 0, 1)
+        pdf.ln(10)
+        
+        # Marks Table
+        pdf.set_font('Arial', 'B', 14)
+        pdf.cell(0, 10, 'Assessment Marks', 0, 1)
+        pdf.set_font('Arial', 'B', 12)
+        
+        # Table Header
+        pdf.cell(90, 10, 'Assessment', 1, 0, 'C')
+        pdf.cell(90, 10, 'Marks', 1, 1, 'C')
+        pdf.set_font('Arial', '', 12)
+        
+        # Table Rows
+        assessments = [
+            ('CCA-1 (10 marks)', student.get('cca1', 'N/A')),
+            ('CCA-2 (5 marks)', student.get('cca2', 'N/A')),
+            ('CCA-3 (Mid term, 15 marks)', student.get('cca3', 'N/A')),
+            ('LCA-1 (Practical Performance)', student.get('lca1', 'N/A')),
+            ('LCA-2 (Active Learning/Project)', student.get('lca2', 'N/A')),
+            ('LCA-3 (End term practical/oral)', student.get('lca3', 'N/A'))
+        ]
+        
+        for name, mark in assessments:
+            pdf.cell(90, 10, name, 1, 0)
+            pdf.cell(90, 10, str(mark), 1, 1, 'C')
+        
+        # Generate PDF to memory
+        pdf_output = io.BytesIO()
+        pdf_bytes = pdf.output(dest='S').encode('latin1')  # Generate PDF as a byte string
+        pdf_output.write(pdf_bytes)
+        pdf_output.seek(0)
+        
+        return send_file(
+            pdf_output,
+            as_attachment=True,
+            download_name=f'Student_Report_{prn}.pdf',
+            mimetype='application/pdf'
+        ), 200
+        
+    except Exception as e:
+        logger.error(f"Report generation error: {e}")
+        return jsonify({'success': False, 'message': 'Error generating report'}), 500
+    finally:
+        if 'cursor' in locals():
+            cursor.close()
+        if 'conn' in locals() and conn.is_connected():
+            conn.close()
 
 if __name__ == '__main__':
     app.run(debug=True)

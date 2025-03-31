@@ -1,0 +1,80 @@
+.teacher-dashboard {
+    background-color: #f8f9fa;
+    min-height: 100vh;
+  }
+  
+  .student-list-container {
+    max-height: 75vh;
+    overflow-y: auto;
+  }
+  
+  .card {
+    border-radius: 0.5rem;
+  }
+  
+  .table thead th {
+    position: sticky;
+    top: 0;
+    background-color: #f8f9fa;
+    z-index: 10;
+  }
+  
+  .form-control:focus {
+    border-color: #86b7fe;
+    box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+  }
+  
+  .nav-tabs .nav-link.active {
+    font-weight: 600;
+    border-bottom: 3px solid #0d6efd;
+  }
+  
+  .performance-graph-container {
+    transition: all 0.3s ease;
+  }
+  
+  .performance-graph-container.fullscreen {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: white;
+    z-index: 1050;
+    padding: 20px;
+    overflow: auto;
+  }
+  
+  .graph-card {
+    border: 1px solid #dee2e6;
+  }
+  
+  .graph-wrapper {
+    width: 100%;
+    position: relative;
+    transition: height 0.3s ease;
+  }
+  
+  .progress-bars {
+    padding: 10px 0;
+  }
+  
+  /* Make sure tabs are visible in fullscreen mode */
+  .fullscreen .nav-tabs {
+    z-index: 1;
+    background: white;
+    padding-top: 10px;
+  }
+  
+  /* Responsive adjustments */
+  @media (max-width: 992px) {
+    .graph-wrapper {
+      height: 400px !important;
+    }
+  }
+  
+  @media (max-width: 768px) {
+    .graph-wrapper {
+      height: 350px !important;
+    }
+  }

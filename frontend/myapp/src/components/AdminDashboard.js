@@ -1,118 +1,290 @@
 import React, { useState } from 'react';
 import axios from 'axios';
-import { Form, Button, Container, Row, Col } from 'react-bootstrap';
+import { useNavigate } from 'react-router-dom';
+import { 
+  Container, 
+  Row, 
+  Col, 
+  Form, 
+  Button, 
+  Card, 
+  Alert, 
+  Spinner,
+  Badge
+} from 'react-bootstrap';
+import { 
+  PersonPlus, 
+  PersonBadge,
+  JournalBookmark,
+  BoxArrowRight
+} from 'react-bootstrap-icons';
+import './AdminDashboard.css';
 
 const AdminDashboard = () => {
+  const navigate = useNavigate();
   const [userType, setUserType] = useState('student');
-  const [prn, setPrn] = useState('');
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [panel, setPanel] = useState('');
-  const [rollNumber, setRollNumber] = useState('');
-  const [password, setPassword] = useState('');
+  const [formData, setFormData] = useState({
+    prn: '',
+    name: '',
+    email: '',
+    panel: '',
+    rollNumber: '',
+    password: '',
+    department: ''
+  });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [success, setSuccess] = useState(null);
+  const [showPassword, setShowPassword] = useState(false);
+
+  const handleInputChange = (e) => {
+    const { id, value } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [id]: value
+    }));
+  };
 
   const handleAddUser = async (e) => {
     e.preventDefault();
     try {
-      const userData = { prn, name, email, panel, rollNumber, password, userType };
-      const response = await axios.post('http://localhost:5000/api/add-user', userData);
+      setLoading(true);
+      setError(null);
+      
+      const userData = { ...formData, userType };
+      const response = await axios.post('http://localhost:5000/api/add-user', userData, {
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      
       if (response.data.success) {
-        alert(`${userType} added successfully`);
-        setPrn('');
-        setName('');
-        setEmail('');
-        setPanel('');
-        setRollNumber('');
-        setPassword('');
+        setSuccess(`${userType === 'student' ? 'Student' : 'Teacher'} added successfully`);
+        setFormData({
+          prn: '',
+          name: '',
+          email: '',
+          panel: '',
+          rollNumber: '',
+          password: '',
+          department: ''
+        });
       } else {
-        alert('Failed to add user');
+        setError(response.data.message || 'Failed to add user');
       }
     } catch (error) {
       console.error('Error adding user:', error);
-      alert('An error occurred');
+      setError(error.response?.data?.message || 'An error occurred');
+      if (error.response?.status === 401) {
+        handleLogout();
+      }
+    } finally {
+      setLoading(false);
     }
   };
 
+  const togglePasswordVisibility = () => {
+    setShowPassword(!showPassword);
+  };
+
+  const handleLogout = () => {
+    // Clear user data
+    localStorage.removeItem('user');
+    
+    // Redirect to login page
+    navigate('/');
+  };
+
   return (
-    <Container className="mt-5">
-      <h2>Admin Dashboard</h2>
-      <Row className="justify-content-md-center">
-        <Col md={6}>
-          <h4>Add {userType === 'student' ? 'Student' : 'Teacher'}</h4>
-          <Form onSubmit={handleAddUser}>
-            <Form.Group controlId="userType">
-              <Form.Label>User Type</Form.Label>
-              <Form.Control
-                as="select"
-                value={userType}
-                onChange={(e) => setUserType(e.target.value)}
+    <Container fluid className="admin-dashboard px-lg-4 py-4">
+      <Row className="mb-4">
+        <Col>
+          <div className="d-flex justify-content-between align-items-center">
+            <div>
+              <h1 className="fw-bold mb-0">Admin Dashboard</h1>
+              <p className="text-muted">Add new users to the system</p>
+            </div>
+            <div className="d-flex align-items-center gap-3">
+              <Badge bg="light" text="dark" className="fs-6 border">
+                Admin
+              </Badge>
+              <Button 
+                variant="outline-danger" 
+                onClick={handleLogout}
+                className="d-flex align-items-center"
               >
-                <option value="student">Student</option>
-                <option value="teacher">Teacher</option>
-              </Form.Control>
-            </Form.Group>
-            <Form.Group controlId="prn" className="mt-3">
-              <Form.Label>PRN</Form.Label>
-              <Form.Control
-                type="text"
-                value={prn}
-                onChange={(e) => setPrn(e.target.value)}
-                required
-              />
-            </Form.Group>
-            <Form.Group controlId="name" className="mt-3">
-              <Form.Label>Name</Form.Label>
-              <Form.Control
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                required
-              />
-            </Form.Group>
-            <Form.Group controlId="email" className="mt-3">
-              <Form.Label>Email</Form.Label>
-              <Form.Control
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-              />
-            </Form.Group>
-            {userType === 'student' && (
-              <>
-                <Form.Group controlId="panel" className="mt-3">
-                  <Form.Label>Panel</Form.Label>
+                <BoxArrowRight className="me-2" />
+                Logout
+              </Button>
+            </div>
+          </div>
+        </Col>
+      </Row>
+
+      <Row className="justify-content-center">
+        <Col lg={8}>
+          <Card className="shadow-sm">
+            <Card.Header className="bg-primary text-white d-flex align-items-center">
+              <PersonPlus className="me-2" size={20} />
+              <h5 className="mb-0">Add {userType === 'student' ? 'Student' : 'Teacher'}</h5>
+            </Card.Header>
+            <Card.Body>
+              {success && <Alert variant="success" onClose={() => setSuccess(null)} dismissible>{success}</Alert>}
+              {error && <Alert variant="danger" onClose={() => setError(null)} dismissible>{error}</Alert>}
+              
+              <Form onSubmit={handleAddUser}>
+                <Form.Group controlId="userType" className="mb-3">
+                  <Form.Label className="text-muted small fw-bold">USER TYPE</Form.Label>
+                  <div className="d-flex gap-2">
+                    <Button
+                      variant={userType === 'student' ? 'primary' : 'outline-primary'}
+                      onClick={() => setUserType('student')}
+                      className="flex-grow-1"
+                    >
+                      <PersonBadge className="me-2" />
+                      Student
+                    </Button>
+                    <Button
+                      variant={userType === 'teacher' ? 'primary' : 'outline-primary'}
+                      onClick={() => setUserType('teacher')}
+                      className="flex-grow-1"
+                    >
+                      <JournalBookmark className="me-2" />
+                      Teacher
+                    </Button>
+                  </div>
+                </Form.Group>
+
+                <Row>
+                  <Col md={6}>
+                    <Form.Group controlId="prn" className="mb-3">
+                      <Form.Label className="text-muted small fw-bold">PRN/ID</Form.Label>
+                      <Form.Control
+                        type="text"
+                        value={formData.prn}
+                        onChange={handleInputChange}
+                        required
+                        placeholder="Enter PRN or Staff ID"
+                        className="form-control-lg"
+                      />
+                    </Form.Group>
+                  </Col>
+                  <Col md={6}>
+                    <Form.Group controlId="name" className="mb-3">
+                      <Form.Label className="text-muted small fw-bold">FULL NAME</Form.Label>
+                      <Form.Control
+                        type="text"
+                        value={formData.name}
+                        onChange={handleInputChange}
+                        required
+                        placeholder="Enter full name"
+                        className="form-control-lg"
+                      />
+                    </Form.Group>
+                  </Col>
+                </Row>
+
+                <Form.Group controlId="email" className="mb-3">
+                  <Form.Label className="text-muted small fw-bold">EMAIL</Form.Label>
                   <Form.Control
-                    type="text"
-                    value={panel}
-                    onChange={(e) => setPanel(e.target.value)}
+                    type="email"
+                    value={formData.email}
+                    onChange={handleInputChange}
                     required
+                    placeholder="Enter email address"
+                    className="form-control-lg"
                   />
                 </Form.Group>
-                <Form.Group controlId="rollNumber" className="mt-3">
-                  <Form.Label>Roll Number</Form.Label>
-                  <Form.Control
-                    type="text"
-                    value={rollNumber}
-                    onChange={(e) => setRollNumber(e.target.value)}
-                    required
-                  />
+
+                {userType === 'student' ? (
+                  <Row>
+                    <Col md={6}>
+                      <Form.Group controlId="panel" className="mb-3">
+                        <Form.Label className="text-muted small fw-bold">PANEL</Form.Label>
+                        <Form.Control
+                          type="text"
+                          value={formData.panel}
+                          onChange={handleInputChange}
+                          required
+                          placeholder="Enter panel"
+                          className="form-control-lg"
+                        />
+                      </Form.Group>
+                    </Col>
+                    <Col md={6}>
+                      <Form.Group controlId="rollNumber" className="mb-3">
+                        <Form.Label className="text-muted small fw-bold">ROLL NUMBER</Form.Label>
+                        <Form.Control
+                          type="text"
+                          value={formData.rollNumber}
+                          onChange={handleInputChange}
+                          required
+                          placeholder="Enter roll number"
+                          className="form-control-lg"
+                        />
+                      </Form.Group>
+                    </Col>
+                  </Row>
+                ) : (
+                  <Form.Group controlId="department" className="mb-3">
+                    <Form.Label className="text-muted small fw-bold">DEPARTMENT</Form.Label>
+                    <Form.Control
+                      type="text"
+                      value={formData.department}
+                      onChange={handleInputChange}
+                      required
+                      placeholder="Enter department"
+                      className="form-control-lg"
+                    />
+                  </Form.Group>
+                )}
+
+                <Form.Group controlId="password" className="mb-4">
+                  <Form.Label className="text-muted small fw-bold">PASSWORD</Form.Label>
+                  <div className="input-group">
+                    <Form.Control
+                      type={showPassword ? "text" : "password"}
+                      value={formData.password}
+                      onChange={handleInputChange}
+                      required
+                      placeholder="Create password"
+                      className="form-control-lg"
+                    />
+                    <Button 
+                      variant="outline-secondary" 
+                      onClick={togglePasswordVisibility}
+                      className="d-flex align-items-center"
+                    >
+                      {showPassword ? 'Hide' : 'Show'}
+                    </Button>
+                  </div>
+                  <small className="text-muted">Minimum 8 characters</small>
                 </Form.Group>
-              </>
-            )}
-            <Form.Group controlId="password" className="mt-3">
-              <Form.Label>Password</Form.Label>
-              <Form.Control
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-              />
-            </Form.Group>
-            <Button variant="primary" type="submit" className="mt-4">
-              Add {userType === 'student' ? 'Student' : 'Teacher'}
-            </Button>
-          </Form>
+
+                <div className="d-grid">
+                  <Button 
+                    variant="primary" 
+                    size="lg" 
+                    type="submit"
+                    disabled={loading}
+                    className="d-flex align-items-center justify-content-center"
+                  >
+                    {loading ? (
+                      <>
+                        <Spinner as="span" animation="border" size="sm" className="me-2" />
+                        Processing...
+                      </>
+                    ) : (
+                      <>
+                        <PersonPlus className="me-2" />
+                        Add {userType === 'student' ? 'Student' : 'Teacher'}
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </Form>
+            </Card.Body>
+          </Card>
         </Col>
       </Row>
     </Container>

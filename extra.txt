@@ -1,0 +1,6 @@
+expected_features = [
+        'cca_1_10_marks', 'cca_2_5_marks', 'cca_3_mid_term_15_marks',
+        'lca_1_practical_performance', 'lca_2_active_learning_project',
+        'lca_3_end_term_practical_oral', 'avg_cca', 'avg_lca',
+        'co1', 'co2', 'co3', 'co4', 'avg_co'
+    ]

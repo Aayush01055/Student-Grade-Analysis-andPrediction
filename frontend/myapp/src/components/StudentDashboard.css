@@ -1,0 +1,75 @@
+.student-dashboard {
+    background-color: #f8fafc;
+    min-height: 100vh;
+  }
+  
+  .graph-container {
+    transition: all 0.3s ease;
+  }
+  
+  .graph-container.fullscreen {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: white;
+    z-index: 1050;
+    padding: 20px;
+    overflow: auto;
+  }
+  
+  .graph-card {
+    border: 1px solid #dee2e6;
+  }
+  
+  .graph-wrapper {
+    width: 100%;
+    position: relative;
+    transition: height 0.3s ease;
+  }
+  
+  .form-control-lg {
+    border-radius: 0.5rem;
+    padding: 0.75rem 1rem;
+    border: 1px solid #e2e8f0;
+  }
+  
+  .form-control-lg:focus {
+    border-color: #93c5fd;
+    box-shadow: 0 0 0 0.25rem rgba(147, 197, 253, 0.25);
+  }
+  
+  .btn-lg {
+    border-radius: 0.5rem;
+    padding: 0.75rem 1.5rem;
+  }
+  
+  .card {
+    border-radius: 0.75rem;
+  }
+  
+  /* Make sure tabs are visible in fullscreen mode */
+  .fullscreen .nav-tabs {
+    z-index: 1;
+    background: white;
+    padding-top: 10px;
+  }
+  
+  /* Responsive adjustments */
+  @media (max-width: 992px) {
+    .graph-wrapper {
+      height: 400px !important;
+    }
+  }
+  
+  @media (max-width: 768px) {
+    .graph-wrapper {
+      height: 350px !important;
+    }
+    
+    .form-control-lg {
+      padding: 0.5rem 0.75rem;
+      font-size: 0.875rem;
+    }
+  }
