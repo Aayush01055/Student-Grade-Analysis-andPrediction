@@ -14,7 +14,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 # Paths
-DATA_PATH = Path('/workspaces/ML-Project/cleaned_student_data.csv')
+DATA_PATH = Path('./final_student_data.csv')
 MODEL_DIR = Path('./models')
 MODEL_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -23,10 +23,10 @@ def load_data():
     df = pd.read_csv(DATA_PATH)
     df.dropna(inplace=True)
     
-    # Standardize column names: lowercase, replace spaces/hyphens, clean underscores
+    # Standardize column names
     df.columns = (
         df.columns.str.lower()
-        .str.replace(r'[\s\-()\/]', '_', regex=True)  # Replace spaces, hyphens, slashes
+        .str.replace(r'[\s\-()\/]','_', regex=True)  # Replace spaces, hyphens, slashes
         .str.replace('__', '_', regex=True)  # Remove double underscores
         .str.strip('_')  # Remove trailing underscores
     )
@@ -39,11 +39,12 @@ def prepare_features(df):
     expected_features = [
         'cca_1_10_marks', 'cca_2_5_marks', 'cca_3_mid_term_15_marks',
         'lca_1_practical_performance', 'lca_2_active_learning_project',
-        'lca_3_end_term_practical_oral', 'avg_cca', 'avg_lca'
+        'lca_3_end_term_practical_oral', 'avg_cca', 'avg_lca',
+        'co1', 'co2', 'co3', 'co4', 'avg_co'
     ]
     
     # Identify actual features in dataset after cleaning column names
-    actual_features = [col for col in df.columns if any(feat in col for feat in expected_features)]
+    actual_features = [col for col in df.columns if col in expected_features]
     
     if not actual_features:
         logger.error("No expected features found in dataset!")
@@ -69,7 +70,7 @@ def prepare_features(df):
     
     return X_scaled, y_scaled
 
-# Train SVM and RF
+# Train Models
 def train_models(X_train, y_train):
     svm_model = SVR(kernel='rbf', C=10, epsilon=0.1)
     rf_model = RandomForestRegressor(n_estimators=200, max_depth=10, random_state=42)
@@ -88,7 +89,7 @@ def evaluate_model(model, X_test, y_test, model_name):
     
     logger.info(f"{model_name} - MSE: {mse:.4f}, MAE: {mae:.4f}, R2 Score: {r2:.4f}")
 
-# Main
+# Main Function
 def main():
     df = load_data()
     X, y = prepare_features(df)
