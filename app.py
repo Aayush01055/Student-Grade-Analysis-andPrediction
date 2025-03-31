@@ -223,7 +223,8 @@ def student_graph(prn):
     try:
         conn = mysql.connector.connect(**db_config)
         cursor = conn.cursor()
-        cursor.execute('SELECT cca1, cca2, cca3, lca1, lca2, lca3 FROM marks_master WHERE prn = %s', (prn,))
+        cursor.execute('''SELECT cca1, cca2, cca3, lca1, lca2, lca3, co1, co2, co3, co4 
+                          FROM marks_master WHERE prn = %s''', (prn,))
         marks = cursor.fetchone()
         cursor.close()
         conn.close()
@@ -232,17 +233,26 @@ def student_graph(prn):
             logger.error(f"No marks found for PRN {prn}")
             return jsonify({'overallScore': 0, 'predictedScore': 0, 'threshold': 50})
 
-        # Convert marks to float and check for NULL values
+        # Convert marks to float and handle NULL values
         marks = [float(m) if m is not None else 0.0 for m in marks]
         logger.debug(f"Fetched marks for PRN {prn}: {marks}")
 
-        overall_score = sum(marks)
-        overall_score_scaled = min((overall_score / 50) * 100, 100)
+        # Scale the marks using the loaded scaler
+        if scaler:
+            marks_scaled = scaler.transform([marks])
+        else:
+            logger.error("Scaler not loaded")
+            marks_scaled = [marks]
 
+        # Calculate overall score
+        overall_score = sum(marks)
+        overall_score_scaled = min((overall_score / 100) * 100, 100)  # Assuming 100 is the max score
+
+        # Predict using the models
         if svm_model and rf_regressor:
             try:
-                marks_df = pd.DataFrame([marks], columns=['cca1', 'cca2', 'cca3', 'lca1', 'lca2', 'lca3'])
-                logger.debug(f"Marks DataFrame: {marks_df}")
+                marks_df = pd.DataFrame(marks_scaled, columns=['cca1', 'cca2', 'cca3', 'lca1', 'lca2', 'lca3', 'co1', 'co2', 'co3', 'co4'])
+                logger.debug(f"Scaled Marks DataFrame: {marks_df}")
 
                 svm_pred = svm_model.predict(marks_df)[0]
                 rf_reg_pred = rf_regressor.predict(marks_df)[0]
@@ -269,7 +279,6 @@ def student_graph(prn):
     except Exception as e:
         logger.error(f"Unexpected error in student_graph: {e}")
         return jsonify({'success': False, 'error': 'Prediction error'}), 500
-
 
 @app.route('/api/send-feedback', methods=['POST'])
 def send_feedback():
