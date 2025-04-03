@@ -210,34 +210,63 @@ def get_students():
 def add_marks():
     data = request.get_json()
     prn = data['prn']
-    cca1 = float(data['cca1'])
-    cca2 = float(data['cca2'])
-    cca3 = float(data['cca3'])
-    lca1 = float(data['lca1'])
-    lca2 = float(data['lca2'])
-    lca3 = float(data['lca3'])
-    co1 = float(data['co1'])
-    co2 = float(data['co2'])
-    co3 = float(data['co3'])
-    co4 = float(data['co4'])
+    
+    # Extract marks (convert to float, handling empty strings)
+    def get_float_value(field):
+        value = data.get(field, '')
+        return float(value) if value != '' else None
+    
+    cca1 = get_float_value('cca1')
+    cca2 = get_float_value('cca2')
+    cca3 = get_float_value('cca3')
+    lca1 = get_float_value('lca1')
+    lca2 = get_float_value('lca2')
+    lca3 = get_float_value('lca3')
+    co1 = get_float_value('co1')
+    co2 = get_float_value('co2')
+    co3 = get_float_value('co3')
+    co4 = get_float_value('co4')
+    
+    # Process absent reasons and create remarks
+    absent_reasons = data.get('absentReasons', {})
+    remarks = []
+    
+    for field, reason in absent_reasons.items():
+        if reason:  # If there's a reason for this field
+            remarks.append(f"{field.upper()}: {reason}")
+    
+    # Combine all remarks into a single string
+    remark = "; ".join(remarks) if remarks else None
 
     try:
         conn = mysql.connector.connect(**db_config)
         cursor = conn.cursor()
+        
+        # Updated query to include remark field
         cursor.execute('''INSERT INTO marks_master 
-                          (prn, cca1, cca2, cca3, lca1, lca2, lca3, co1, co2, co3, co4) 
-                          VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) 
+                          (prn, cca1, cca2, cca3, lca1, lca2, lca3, co1, co2, co3, co4, remark) 
+                          VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) 
                           ON DUPLICATE KEY UPDATE 
-                          cca1=%s, cca2=%s, cca3=%s, lca1=%s, lca2=%s, lca3=%s, co1=%s, co2=%s, co3=%s, co4=%s''', 
-                       (prn, cca1, cca2, cca3, lca1, lca2, lca3, co1, co2, co3, co4,
-                        cca1, cca2, cca3, lca1, lca2, lca3, co1, co2, co3, co4))
+                          cca1=VALUES(cca1), cca2=VALUES(cca2), cca3=VALUES(cca3), 
+                          lca1=VALUES(lca1), lca2=VALUES(lca2), lca3=VALUES(lca3), 
+                          co1=VALUES(co1), co2=VALUES(co2), co3=VALUES(co3), co4=VALUES(co4),
+                          remark=VALUES(remark)''', 
+                       (prn, cca1, cca2, cca3, lca1, lca2, lca3, co1, co2, co3, co4, remark))
+        
         conn.commit()
         cursor.close()
         conn.close()
         return jsonify({'success': True})
+        
     except mysql.connector.Error as err:
         logger.error(f"Error adding marks: {err}")
         return jsonify({'success': False, 'error': 'Database error'}), 500
+    except ValueError as ve:
+        logger.error(f"Invalid mark value: {ve}")
+        return jsonify({'success': False, 'error': 'Invalid mark value'}), 400
+    except Exception as e:
+        logger.error(f"Unexpected error: {e}")
+        return jsonify({'success': False, 'error': 'Server error'}), 500
 
 def generate_prediction_with_uncertainty(base_prediction, confidence_level=0.90):
     """
@@ -266,21 +295,32 @@ def student_graph(prn):
     logger.info(f"Processing student graph for PRN: {prn}")
     try:
         conn = mysql.connector.connect(**db_config)
-        cursor = conn.cursor()
-        cursor.execute('SELECT cca1, cca2, cca3, lca1, lca2, lca3, co1, co2, co3, co4 '
-                       'FROM marks_master WHERE prn = %s', (prn,))
-        marks = cursor.fetchone()
+        cursor = conn.cursor(dictionary=True)
         
-        cursor.execute('SELECT predicted_score, prediction_lower_bound, prediction_upper_bound, '
-                       'prediction_date FROM prediction_history WHERE prn = %s '
-                       'ORDER BY prediction_date DESC LIMIT 1', (prn,))
+        # Get all student data including remarks in one query
+        cursor.execute('''
+            SELECT cca1, cca2, cca3, lca1, lca2, lca3, co1, co2, co3, co4, remark
+            FROM marks_master 
+            WHERE prn = %s
+        ''', (prn,))
+        student_data = cursor.fetchone()
+        
+        # Get prediction data
+        cursor.execute('''
+            SELECT predicted_score, prediction_lower_bound, prediction_upper_bound, prediction_date 
+            FROM prediction_history 
+            WHERE prn = %s 
+            ORDER BY prediction_date DESC 
+            LIMIT 1
+        ''', (prn,))
         prev_prediction = cursor.fetchone()
         
         cursor.close()
         conn.close()
 
-        if not marks or all(m == 0 or m is None for m in marks):
-            logger.warning(f"No valid marks found for PRN: {prn}, returning default values")
+        if not student_data or all(m == 0 or m is None for m in [student_data.get('cca1'), student_data.get('cca2'), student_data.get('cca3'), 
+                                                               student_data.get('lca1'), student_data.get('lca2'), student_data.get('lca3')]):
+            logger.warning(f"No valid marks found for PRN: {prn}")
             return jsonify({
                 'success': True,
                 'status': 'No Data',
@@ -288,10 +328,14 @@ def student_graph(prn):
                 'predictedScore': 0.0,
                 'lowerBound': 0.0,
                 'upperBound': 0.0,
-                'threshold': 50
+                'threshold': 50,
+                'remark': student_data.get('remark', 'No remarks available') if student_data else 'No data found',
+                'hasRemark': bool(student_data and student_data.get('remark'))
             })
 
-        marks = [float(m) if m is not None else 0.0 for m in marks]
+        # Extract marks and calculate scores (your existing logic)
+        marks = [float(student_data[key]) if student_data[key] is not None else 0.0 
+                for key in ['cca1', 'cca2', 'cca3', 'lca1', 'lca2', 'lca3']]
         overall_score = sum(marks[:6])
         logger.debug(f"Raw overall score for PRN {prn}: {overall_score}")
 
@@ -365,8 +409,11 @@ def student_graph(prn):
             'predictedScore': float(predicted_score),
             'lowerBound': float(lower_bound),
             'upperBound': float(upper_bound),
-            'threshold': 50
+            'threshold': 50,
+            'remark': student_data.get('remark', 'No remarks available'),
+            'hasRemark': bool(student_data.get('remark'))
         })
+
     except Exception as e:
         logger.error(f"Error in student graph prediction for PRN {prn}: {e}")
         return jsonify({
@@ -377,7 +424,9 @@ def student_graph(prn):
             'predictedScore': 0.0,
             'lowerBound': 0.0,
             'upperBound': 0.0,
-            'threshold': 50
+            'threshold': 50,
+            'remark': 'Error fetching remarks',
+            'hasRemark': False
         }), 500
 
 @app.route('/api/send-feedback', methods=['POST'])
