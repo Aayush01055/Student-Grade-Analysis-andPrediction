@@ -24,14 +24,14 @@ logger = logging.getLogger(__name__)
 
 # MySQL configuration
 db_config = {
-    'host': 'localhost',
+    'host': '127.0.0.1',
     'user': 'root',
-    'password': 'rootpassword',
+    'password': 'Aayush14$',
     'database': 'student_grade_system'
 }
 
 # Model file paths
-MODEL_DIR = '/workspace/models'
+MODEL_DIR = 'D:/Study\MIT WPU/3rd Year/MIT-WPU 6th Sem/ML/Project Stuff/Student-Grade-and-Record-Prediction/model'
 SCALER_PATH = os.path.join(MODEL_DIR, 'scaler.pkl')
 TARGET_SCALER_PATH = os.path.join(MODEL_DIR, 'target_scaler.pkl')
 RF_MODEL_PATH = os.path.join(MODEL_DIR, 'rf_student_performance_model.pkl')
@@ -347,7 +347,11 @@ def student_graph(prn):
         marks_with_derived = list(marks[:6]) + [avg_cca, avg_lca]
 
         max_possible_score = 50
-        overall_score_scaled = min((overall_score / max_possible_score) * 100, 100)
+        if max_possible_score == 0:
+            logger.error("Max possible score is zero, cannot scale overall score.")
+            overall_score_scaled = 0
+        else:
+            overall_score_scaled = min((overall_score / max_possible_score) * 100, 100)
 
         if scaler and target_scaler and rf_model and xgb_model and meta_model:
             try:
@@ -382,7 +386,7 @@ def student_graph(prn):
             conn = mysql.connector.connect(**db_config)
             cursor = conn.cursor()
             cursor.execute('INSERT INTO prediction_history (prn, predicted_score, prediction_lower_bound, prediction_upper_bound) '
-                           'VALUES (%s, %s, %s, %s)', (prn, predicted_score, lower_bound, upper_bound))
+                           'VALUES (%s, %s, %s, %s)', (prn, float(predicted_score), float(lower_bound), float(upper_bound)))
             conn.commit()
             cursor.close()
             conn.close()
@@ -658,5 +662,73 @@ def generate_student_report(prn):
         if 'conn' in locals() and conn.is_connected():
             conn.close()
 
+@app.route('/api/co-analysis', methods=['GET'])
+def co_analysis():
+    try:
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor()
+        
+        # Define thresholds for total marks (60%)
+        cca_max = 30  # CCA1 (10) + CCA2 (5) + CCA3 (15)
+        lca_max = 35  # LCA1 (10) + LCA2 (10) + LCA3 (15)
+        cca_threshold = cca_max * 0.6  # 18
+        lca_threshold = lca_max * 0.6  # 21
+        
+        # Initialize result
+        result = {
+            'co1': {'understood': 0, 'notUnderstood': 0},
+            'co2': {'understood': 0, 'notUnderstood': 0},
+            'co3': {'understood': 0, 'notUnderstood': 0},
+            'co4': {'understood': 0, 'notUnderstood': 0},
+            'cca_total': {'above': 0, 'below': 0},
+            'lca_total': {'above': 0, 'below': 0}
+        }
+        
+        # Count CO understanding
+        for co in ['co1', 'co2', 'co3', 'co4']:
+            cursor.execute(f'SELECT COUNT(*) FROM marks_master WHERE {co} = 1')
+            result[co]['understood'] = cursor.fetchone()[0]
+            cursor.execute(f'SELECT COUNT(*) FROM marks_master WHERE {co} = 0')
+            result[co]['notUnderstood'] = cursor.fetchone()[0]
+        
+        # Count students above/below threshold for CCA total
+        cursor.execute('''
+            SELECT COUNT(*) 
+            FROM marks_master 
+            WHERE (COALESCE(cca1, 0) + COALESCE(cca2, 0) + COALESCE(cca3, 0)) >= %s
+        ''', (cca_threshold,))
+        result['cca_total']['above'] = cursor.fetchone()[0]
+        
+        cursor.execute('''
+            SELECT COUNT(*) 
+            FROM marks_master 
+            WHERE (COALESCE(cca1, 0) + COALESCE(cca2, 0) + COALESCE(cca3, 0)) < %s
+            AND (cca1 IS NOT NULL OR cca2 IS NOT NULL OR cca3 IS NOT NULL)
+        ''', (cca_threshold,))
+        result['cca_total']['below'] = cursor.fetchone()[0]
+        
+        # Count students above/below threshold for LCA total
+        cursor.execute('''
+            SELECT COUNT(*) 
+            FROM marks_master 
+            WHERE (COALESCE(lca1, 0) + COALESCE(lca2, 0) + COALESCE(lca3, 0)) >= %s
+        ''', (lca_threshold,))
+        result['lca_total']['above'] = cursor.fetchone()[0]
+        
+        cursor.execute('''
+            SELECT COUNT(*) 
+            FROM marks_master 
+            WHERE (COALESCE(lca1, 0) + COALESCE(lca2, 0) + COALESCE(lca3, 0)) < %s
+            AND (lca1 IS NOT NULL OR lca2 IS NOT NULL OR lca3 IS NOT NULL)
+        ''', (lca_threshold,))
+        result['lca_total']['below'] = cursor.fetchone()[0]
+        
+        cursor.close()
+        conn.close()
+        return jsonify({'success': True, 'data': result})
+    except mysql.connector.Error as err:
+        logger.error(f"Error fetching CO analysis: {err}")
+        return jsonify({'success': False, 'error': 'Database error'}), 500
+    
 if __name__ == '__main__':
     app.run(debug=True)

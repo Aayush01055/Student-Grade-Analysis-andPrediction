@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Student CO, CCA, and LCA Total Marks Analysis</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            background-color: #f3f4f6;
+        }
+        .chart-container {
+            max-width: 100%;
+            height: 256px; /* Fixed height for charts */
+        }
+        canvas {
+            max-height: 100% !important;
+            max-width: 100% !important;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col items-center justify-center p-4">
+    <div class="bg-white shadow-lg rounded-lg p-4 w-full max-w-3xl">
+        <h1 class="text-xl font-bold text-center mb-4">Student CO, CCA, and LCA Total Marks Analysis</h1>
+        
+        <!-- CO Chart Container -->
+        <div class="mb-6">
+            <h2 class="text-lg font-semibold mb-2 text-center">Course Outcome Understanding</h2>
+            <div class="chart-container">
+                <canvas id="coChart"></canvas>
+            </div>
+        </div>
+        
+        <!-- CCA Chart Container -->
+        <div class="mb-6">
+            <h2 class="text-lg font-semibold mb-2 text-center">CCA Total Marks Analysis (Threshold: 18/30)</h2>
+            <div class="chart-container">
+                <canvas id="ccaChart"></canvas>
+            </div>
+        </div>
+        
+        <!-- LCA Chart Container -->
+        <div>
+            <h2 class="text-lg font-semibold mb-2 text-center">LCA Total Marks Analysis (Threshold: 21/35)</h2>
+            <div class="chart-container">
+                <canvas id="lcaChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Function to fetch data from Flask backend
+        async function fetchAnalysisData() {
+            try {
+                const response = await fetch('http://localhost:5000/api/co-analysis');
+                if (!response.ok) throw new Error('Failed to fetch data');
+                return await response.json();
+            } catch (error) {
+                console.error('Error fetching data:', error);
+                return null;
+            }
+        }
+
+        // Function to render the CO double bar graph
+        function renderCOChart(data) {
+            const ctx = document.getElementById('coChart').getContext('2d');
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: ['CO1', 'CO2', 'CO3', 'CO4'],
+                    datasets: [
+                        {
+                            label: 'Understood (1)',
+                            data: [
+                                data.co1.understood,
+                                data.co2.understood,
+                                data.co3.understood,
+                                data.co4.understood
+                            ],
+                            backgroundColor: 'rgba(54, 162, 235, 0.6)',
+                            borderColor: 'rgba(54, 162, 235, 1)',
+                            borderWidth: 1
+                        },
+                        {
+                            label: 'Not Understood (0)',
+                            data: [
+                                data.co1.notUnderstood,
+                                data.co2.notUnderstood,
+                                data.co3.notUnderstood,
+                                data.co4.notUnderstood
+                            ],
+                            backgroundColor: 'rgba(255, 99, 132, 0.6)',
+                            borderColor: 'rgba(255, 99, 132, 1)',
+                            borderWidth: 1
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Number of Students'
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Course Outcomes'
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'top'
+                        }
+                    }
+                }
+            });
+        }
+
+        // Function to render the CCA total marks bar graph
+        function renderCCAChart(data) {
+            const ctx = document.getElementById('ccaChart').getContext('2d');
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: ['CCA Total'],
+                    datasets: [
+                        {
+                            label: 'Above Threshold (≥18)',
+                            data: [data.cca_total.above],
+                            backgroundColor: 'rgba(75, 192, 192, 0.6)',
+                            borderColor: 'rgba(75, 192, 192, 1)',
+                            borderWidth: 1
+                        },
+                        {
+                            label: 'Below Threshold (<18)',
+                            data: [data.cca_total.below],
+                            backgroundColor: 'rgba(255, 159, 64, 0.6)',
+                            borderColor: 'rgba(255, 159, 64, 1)',
+                            borderWidth: 1
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Number of Students'
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Assessment'
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'top'
+                        }
+                    }
+                }
+            });
+        }
+
+        // Function to render the LCA total marks bar graph
+        function renderLCAChart(data) {
+            const ctx = document.getElementById('lcaChart').getContext('2d');
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: ['LCA Total'],
+                    datasets: [
+                        {
+                            label: 'Above Threshold (≥21)',
+                            data: [data.lca_total.above],
+                            backgroundColor: 'rgba(75, 192, 192, 0.6)',
+                            borderColor: 'rgba(75, 192, 192, 1)',
+                            borderWidth: 1
+                        },
+                        {
+                            label: 'Below Threshold (<21)',
+                            data: [data.lca_total.below],
+                            backgroundColor: 'rgba(255, 159, 64, 0.6)',
+                            borderColor: 'rgba(255, 159, 64, 1)',
+                            borderWidth: 1
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Number of Students'
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Assessment'
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'top'
+                        }
+                    }
+                }
+            });
+        }
+
+        // Initialize the page
+        async function init() {
+            const data = await fetchAnalysisData();
+            if (data && data.success) {
+                renderCOChart(data.data);
+                renderCCAChart(data.data);
+                renderLCAChart(data.data);
+            } else {
+                document.body.innerHTML += 
+                    '<p class="text-red-500 text-center mt-4">Failed to load analysis data.</p>';
+            }
+        }
+
+        // Run initialization
+        init();
+    </script>
+</body>
+</html>

@@ -34,6 +34,7 @@ import StudentGraph from './StudentGraph';
 import FeedbackForm from './FeedbackForm';
 import './TeacherDashboard.css';
 
+
 // Add these handler functions
 
 
@@ -650,76 +651,15 @@ const handleAddMarks = async (e) => {
       
     </div>
   );
-  const renderCOVisualization = () => (
-    <Card className="shadow-sm mb-4">
-      <Card.Header className="bg-success text-white d-flex align-items-center">
-        <GraphUp className="me-2" />
-        <h5 className="mb-0">Course Outcomes Visualization</h5>
-      </Card.Header>
-      <Card.Body>
-        {performanceData ? (
-          <div className="row">
-            {Object.keys(performanceData.coScores).map((co, index) => (
-              <Col md={6} lg={4} key={index} className="mb-3">
-                <Card className="shadow-sm">
-                  <Card.Body>
-                    <h6 className="text-primary">{co.toUpperCase()}</h6>
-                    <div className="progress" style={{ height: '20px' }}>
-                      <div
-                        className="progress-bar bg-info"
-                        role="progressbar"
-                        style={{ width: `${performanceData.coScores[co]}%` }}
-                        aria-valuenow={performanceData.coScores[co]}
-                        aria-valuemin="0"
-                        aria-valuemax="100"
-                      >
-                        {performanceData.coScores[co]}%
-                      </div>
-                    </div>
-                  </Card.Body>
-                </Card>
-              </Col>
-            ))}
-          </div>
-        ) : (
-          <div className="text-center">
-            <Spinner animation="border" variant="primary" />
-            <p className="mt-2">Loading CO Visualization...</p>
-          </div>
-        )}
-      </Card.Body>
-    </Card>
-  );
 
-  const renderSHAPChart = () => (
-    <Card className="shadow-sm mb-4">
-      <Card.Header className="bg-warning text-white d-flex align-items-center">
-        <GraphUp className="me-2" />
-        <h5 className="mb-0">SHAP Analysis</h5>
-      </Card.Header>
-      <Card.Body>
-        {performanceData?.shapValues ? (
-          <div className="shap-chart-container">
-            <StudentGraph data={performanceData.shapValues} type="shap" />
-          </div>
-        ) : (
-          <div className="text-center">
-            <Spinner animation="border" variant="primary" />
-            <p className="mt-2">Loading SHAP Analysis...</p>
-          </div>
-        )}
-      </Card.Body>
-    </Card>
-  );
 
   return (
-
-      <><div>
-      {renderCOVisualization()}
-      {renderSHAPChart()}
-    </div><Container fluid className="teacher-dashboard px-4 py-4" style={{
-      fontSize: dashboardStyles[dashboardView].fontSize
-    }}>
+    <>
+      <div>
+      </div>
+      <Container fluid className="teacher-dashboard px-4 py-4" style={{
+        fontSize: dashboardStyles[dashboardView].fontSize
+      }}>
         <Row className="mb-4 align-items-center">
           <Col>
             <h2 className="fw-bold text-primary">
@@ -727,18 +667,6 @@ const handleAddMarks = async (e) => {
               Teacher Dashboard
             </h2>
             <p className="text-muted">Manage student assessments and performance</p>
-          </Col>
-          <Col xs="auto">
-            <Dropdown className="ms-2">
-              <Dropdown.Toggle variant="outline-secondary" id="dashboard-view-dropdown">
-                View: {dashboardView.charAt(0).toUpperCase() + dashboardView.slice(1)}
-              </Dropdown.Toggle>
-              <Dropdown.Menu>
-                <Dropdown.Item onClick={() => setDashboardView('default')}>Default View</Dropdown.Item>
-                <Dropdown.Item onClick={() => setDashboardView('compact')}>CO'yS View</Dropdown.Item>
-                <Dropdown.Item onClick={() => setDashboardView('detailed')}>Detailed View</Dropdown.Item>
-              </Dropdown.Menu>
-            </Dropdown>
           </Col>
           <Col xs="auto" className="d-flex gap-2">
             <Button
@@ -751,6 +679,14 @@ const handleAddMarks = async (e) => {
               ) : (
                 'Student Report'
               )}
+            </Button>
+
+            <Button
+              variant="outline-primary"
+              href="/student-analysis"
+            >
+              <GraphUp className="me-1" />
+              Show Student Analysis
             </Button>
 
             <Button
