@@ -24,10 +24,10 @@ logger = logging.getLogger(__name__)
 
 # MySQL configuration
 db_config = {
-    'host': '127.0.0.1',
-    'user': 'root',
-    'password': 'Aayush14$',
-    'database': 'student_grade_system'
+    'host': 'MYSQL_HOST',
+    'user': 'MYSQL_USER',
+    'password': 'MYSQL_PASSWORD',
+    'database': 'YOUR_DB_NAME'
 }
 
 # Model file paths
@@ -495,11 +495,11 @@ def submit_discrepancy():
         return jsonify({'success': False, 'error': 'Email sending failed'}), 500
 
 # Configure Flask-Mail (add to your existing Flask config)
-app.config['MAIL_SERVER'] = 'smtp.gmail.com'
-app.config['MAIL_PORT'] = 587
+app.config['MAIL_SERVER'] = 'SMTP_SERVR'
+app.config['MAIL_PORT'] = PORT
 app.config['MAIL_USE_TLS'] = True
-app.config['MAIL_USERNAME'] = 'aayush.shah@mitwpu.edu.in'
-app.config['MAIL_PASSWORD'] = 'flsu hpwx lrjk nnwd'
+app.config['MAIL_USERNAME'] = 'MAIL_ID'
+app.config['MAIL_PASSWORD'] = 'APP_PASSWORD'
 mail = Mail(app)
 
 # Add this route to your existing Flask app
